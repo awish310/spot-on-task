@@ -9,7 +9,7 @@ const mockData = {
     colors: ['#800080', '#000080', '#800000'],
     gains: [0, 0, 0],
     offsets: [0, 0, 0],
-    markers: [3.33, 2, 1],
+    markers: [],
     lineWidth: 5,
 };
 

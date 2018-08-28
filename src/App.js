@@ -94,6 +94,11 @@ class App extends Component {
         return this.generateStateByProperty(property, value, lineIndex, prevState, 'float', 0);
       case 'offsets':
         return this.generateStateByProperty(property, value, lineIndex, prevState, 'int', 0);
+      case 'markers':
+        return {
+          ...prevState,
+          markers: [...prevState.markers, this.getParsedValue(value, 'float')],
+        };
       default:
         return prevState;
     }
@@ -107,6 +112,7 @@ class App extends Component {
       isAddingRemark: true,
     }));
   }
+
   render() {
     const { data, gains, offsets, colors, lineWidth, markers, isAddingRemark } = this.state;
 
@@ -121,6 +127,7 @@ class App extends Component {
             options={this.generateObserverGraphOptions()}
             markers={markers}
             isAddingRemark={isAddingRemark}
+            onFieldChanged={(type, value, lineIndex) => this.handleFieldChanged(type, value, lineIndex)}
           />
           <ObserverGraphSettings
             gains={gains}

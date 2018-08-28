@@ -16,6 +16,23 @@ const Wrapper = styled.div`
       width: 95%;
   }
 `;
+const MarkerLine = styled.div`
+    position: absolute;
+    height: ${p => p.height ? `${p.height - 20}px` : 0};
+    background-color: ${p => p.lineColor || '#000000'};
+    z-index: ${p => p.zIndex || 1};
+    width: 2px;
+    left: ${p => p.left ? `${p.left}px` : 0};
+`;
+const MarkerLabel = styled.div`
+    position: absolute;
+    height: 20px;
+    z-index: ${p => p.zIndex || 1};
+    width: 50px;
+    left: ${p => p.left ? `${p.left - 25}px` : 0};
+    top: ${p => p.top ? `${p.top - 17}px` : 0};
+    text-align: center;
+`
 
 class ObserverGraph extends Component {
     constructor(props) {
@@ -23,18 +40,21 @@ class ObserverGraph extends Component {
 
         this.state = {};
     }
-    handleChartHover = (event) => {
-        const { isAddingRemark } = this.props;
-        const { chartCli } = this;
-
-        console.log(event);
-    }
-    handleChartClick = (event) => {
-        const { chartCli } = this;
-        window.google.visualization.events
-            .removeListener(this.chart, 'onmouseover', this.handleChartHover);
-
-        console.log(event.x);
+    chartEvents = [
+        {
+            eventName: 'ready',
+            callback: (cbObj) => {
+                const { chartWrapper } = cbObj;
+                const chart = chartWrapper.getChart();
+                this.chartCli = chart.getChartLayoutInterface();
+                this.calculateShadowDiv();
+            },
+        },
+    ];
+    getDataPoints = () => {
+        const { data } = this.props;
+        const [header, ...restOfData] = data;
+        return restOfData.length - 1;
     }
     calculateShadowDiv = (event) => {
         const { chartCli } = this;
@@ -43,34 +63,56 @@ class ObserverGraph extends Component {
         const left = chartCli.getXLocation(0);
         const right = chartCli.getXLocation(3); // TODO: make dynamic
         const width = right - left;
-        console.log(width);
 
         const { shadowDiv } = this.state;
 
         if (JSON.stringify(shadowDiv) !== JSON.stringify({ height, left, top, width })) {
-            this.setState(() => ({
+            this.setState((prevState) => ({
+                ...prevState,
                 shadowDiv: { height, left, top, width }
             }));
         }
     }
-    chartEvents = [
-        {
-            eventName: 'ready',
-            callback: (cbObj) => {
-                const { chartWrapper } = cbObj;
-                this.chart = chartWrapper.getChart();
+    calculateLeft = (shadowDiv, marker, dataPoints) => {
+        return shadowDiv.left + (((marker - 1) / dataPoints) * shadowDiv.width);
+    }
+    calculateMarkerPoint = (x) => {
+        const { shadowDiv } = this.state;
+        const { left, width } = shadowDiv;
+        const dataPoints = this.getDataPoints();
 
-                window.google.visualization.events
-                    .addListener(this.chart, 'click', this.handleChartClick);
+        return ((x - left) / width * dataPoints) + 1;
+    }
+    handleMouseMove = (event) => {
+        const { isAddingRemark } = this.props;
+        if (!isAddingRemark) {
+            return;
+        }
+        const { shadowDiv } = this.state;
+        if (!shadowDiv) {
+            return;
+        }
+        const { offsetX, offsetY } = event.nativeEvent;
+        const { height, left, top, width } = shadowDiv;
 
-                window.google.visualization.events
-                    .addListener(this.chart, 'onmouseover', this.handleChartHover);
+        if (
+            offsetX > left && offsetX < left + width &&
+            offsetY > top && offsetY < top + height
+        ) {
+            const hoverPoint = this.calculateMarkerPoint(offsetX);
 
-                this.chartCli = this.chart.getChartLayoutInterface();
-                this.calculateShadowDiv();
-            },
-        },
-    ];
+            this.setState((prevState) => ({
+                prevState,
+                hoverPoint,
+            }));
+        }
+    }
+    handleMouseLeave = () => {
+        this.setState((prevState) => ({
+            prevState,
+            hoverPoint: false,
+        }));
+    }
     generateOptionsSeries = (colors) => {
         return colors.reduce((series, color, index) => {
             return {
@@ -82,7 +124,7 @@ class ObserverGraph extends Component {
         }, {});
     }
     generateOptions = () => {
-        const { options, isAddingRemark } = this.props;
+        const { options } = this.props;
         const { lineWidth, colors } = options;
 
         return {
@@ -118,41 +160,82 @@ class ObserverGraph extends Component {
             })];
         })];
     }
-
+    renderMarkers = (shadowDiv, markers, dataPoints) => {
+        if (!shadowDiv) {
+            return null;
+        }
+        const { height, top } = shadowDiv;
+        return markers.map((marker, i) => {
+            return (
+                <React.Fragment>
+                    <MarkerLine
+                        key={`marker-${i}`}
+                        height={height}
+                        lineColor='red'
+                        zIndex={2}
+                        left={this.calculateLeft(shadowDiv, marker, dataPoints)}
+                    ></MarkerLine>
+                    <MarkerLabel
+                        key={`marker-label-${i}`}
+                        zIndex={2}
+                        left={this.calculateLeft(shadowDiv, marker, dataPoints)}
+                        top={top + height}
+                    >
+                        {Math.round(marker * 100) / 100}
+                    </MarkerLabel>
+                </React.Fragment>
+            );
+        })
+    }
+    renderMarkerHover = (shadowDiv, hoverPoint, dataPoints) => {
+        if (!shadowDiv || !hoverPoint) {
+            return null;
+        }
+        const { height, top } = shadowDiv;
+        return (
+            <React.Fragment >
+                <MarkerLine
+                    height={height}
+                    lineColor='gray'
+                    zIndex={0}
+                    left={this.calculateLeft(shadowDiv, hoverPoint, dataPoints)}
+                    onClick={() => this.props.onFieldChanged('markers', hoverPoint)}
+                ></MarkerLine >
+                <MarkerLabel
+                    zIndex={0}
+                    left={this.calculateLeft(shadowDiv, hoverPoint, dataPoints)}
+                    top={top + height}
+                >
+                    {Math.round(hoverPoint * 100) / 100}
+                </MarkerLabel>
+            </React.Fragment>
+        );
+    }
 
     render() {
-        const { shadowDiv } = this.state;
-        const { markers, data } = this.props;
-        const [header, ...restOfData] = data;
-        const dataPoints = restOfData.length - 1;
+        const { shadowDiv, hoverPoint } = this.state;
+        const { markers } = this.props;
+        const dataPoints = this.getDataPoints();
+
         return (
-            <Wrapper>
+            <Wrapper
+                onMouseMove={this.handleMouseMove}
+                onMouseLeave={this.handleMouseLeave}
+            >
                 <Chart
                     width='100%'
-                    height='calc(100% - 20px)'
+                    height='100%'
                     chartType='LineChart'
                     loader={<div>Loading Chart</div>}
                     data={this.generateData()}
                     options={this.generateOptions()}
                     chartEvents={this.chartEvents}
                 />
-                {!!shadowDiv && markers.map((marker, i) => (
-                    <div
-                        key={`marker-${i}`}
-                        style={{
-                            position: 'absolute',
-                            height: shadowDiv.height,
-                            backgroundColor: 'red',
-                            width: '2px',
-                            left: shadowDiv.left + (
-                                ((marker - 1) / dataPoints) * shadowDiv.width
-                            )
-                        }}
-                    ></div>
-                ))}
+                {this.renderMarkers(shadowDiv, markers, dataPoints)}
+                {this.renderMarkerHover(shadowDiv, hoverPoint, dataPoints)}
             </Wrapper>
         );
     }
 }
-// 263.953 / 113.953
+
 export default ObserverGraph;
